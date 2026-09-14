@@ -1,0 +1,21 @@
+{
+  "project": "ALLO VIDANGE",
+  "mode": {
+    "public": "persuade",
+    "admin": "operate"
+  },
+  "direction": "service-ledger",
+  "constraints": [
+    "no-glassmorphism",
+    "no-decorative-gradients",
+    "single-workshop",
+    "mobile-first",
+    "reduced-motion"
+  ],
+  "visual": {
+    "canvas": "#101112",
+    "surface": "#18191b",
+    "accent": "#e43636",
+    "radius": "16px cards / 10px controls"
+  }
+}

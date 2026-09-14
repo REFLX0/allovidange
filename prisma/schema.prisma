@@ -1,0 +1,209 @@
+// prisma/schema.prisma
+// ALLO VIDANGE — Système de Gestion des Rendez-vous
+// Vidange • Filtres • Entretien Auto — Tunisie
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// MODEL: User (Administrateur)
+// ============================================================
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  hashedPassword String   @map("hashed_password")
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+// ============================================================
+// MODEL: Customer (Client)
+// ============================================================
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String   @unique
+  email     String?
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  vehicles     Vehicle[]
+  appointments Appointment[]
+
+  @@index([phone])
+  @@map("customers")
+}
+
+// ============================================================
+// MODEL: Vehicle (Véhicule)
+// ============================================================
+model Vehicle {
+  id           String   @id @default(cuid())
+  brand        String   // Marque: Peugeot, Renault, etc.
+  model        String   // Modèle: 308, Clio, etc.
+  engine       String?  // Motorisation: 1.6 HDi, etc.
+  year         Int?     // Année: 2017
+  plate        String?  // Immatriculation
+  mileage      Int?     // Kilométrage
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  customerId   String        @map("customer_id")
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([plate])
+  @@index([customerId])
+  @@map("vehicles")
+}
+
+// ============================================================
+// MODEL: Service (Prestation)
+// ============================================================
+model Service {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  duration    Int      @default(30) // Minutes
+  price       Int?     // Optionnel — DT (Dinars Tunisiens)
+  color       String   @default("#C0101A") // Couleur pour calendrier
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  appointments Appointment[]
+
+  @@map("services")
+}
+
+// ============================================================
+// MODEL: Appointment (Rendez-vous)
+// ============================================================
+model Appointment {
+  id        String            @id @default(cuid())
+  reference String            @unique @default(cuid()) // Référence publique (ex: RDV-abc123)
+  status    AppointmentStatus @default(PENDING)
+
+  // Date & Heure
+  date      DateTime @db.Date
+  startTime DateTime @map("start_time")
+  endTime   DateTime @map("end_time")
+
+  // Notes internes (admin uniquement)
+  internalNotes   String? @map("internal_notes")
+  cancelReason    String? @map("cancel_reason")
+  rescheduleCount Int     @default(0) @map("reschedule_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  customerId String   @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  vehicleId  String?  @map("vehicle_id")
+  vehicle    Vehicle? @relation(fields: [vehicleId], references: [id])
+
+  serviceId  String  @map("service_id")
+  service    Service @relation(fields: [serviceId], references: [id])
+
+  @@index([date, status])
+  @@index([customerId])
+  @@map("appointments")
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+// ============================================================
+// MODEL: BusinessSettings (Paramètres métier)
+// ============================================================
+// Un seul enregistrement — paramètres globaux du commerce
+model BusinessSettings {
+  id                    String  @id @default("singleton")
+  businessName          String  @default("ALLO VIDANGE") @map("business_name")
+  phone                 String? // Téléphone principal
+  whatsappPhone         String? @map("whatsapp_phone") // Numéro WhatsApp (format international)
+  email                 String?
+  address               String?
+  googleMapsUrl         String? @map("google_maps_url")
+  appointmentDuration   Int     @default(30) @map("appointment_duration") // Minutes
+  bufferTime            Int     @default(0) @map("buffer_time") // Minutes entre RDV
+  minBookingNotice      Int     @default(60) @map("min_booking_notice") // Minutes avant RDV
+  maxBookingHorizon     Int     @default(30) @map("max_booking_horizon") // Jours à l'avance max
+
+  @@map("business_settings")
+}
+
+// ============================================================
+// MODEL: BusinessHours (Horaires d'ouverture)
+// ============================================================
+// 7 lignes — une par jour de la semaine (0=Dimanche, 6=Samedi)
+model BusinessHours {
+  id        String  @id @default(cuid())
+  dayOfWeek Int     @unique @map("day_of_week") // 0=Dim, 1=Lun, ..., 6=Sam
+  isOpen    Boolean @default(true) @map("is_open")
+  openTime  String  @default("08:00") @map("open_time")  // "HH:mm"
+  closeTime String  @default("18:00") @map("close_time") // "HH:mm"
+
+  @@map("business_hours")
+}
+
+// ============================================================
+// MODEL: BlockedPeriod (Périodes de fermeture)
+// ============================================================
+// Jours fériés, vacances, fermetures exceptionnelles
+model BlockedPeriod {
+  id        String   @id @default(cuid())
+  label     String   // "Fête nationale", "Congé annuel", etc.
+  startDate DateTime @db.Date @map("start_date")
+  endDate   DateTime @db.Date @map("end_date")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("blocked_periods")
+}
+
+// ============================================================
+// MODEL: AuditLog (Journal des actions admin)
+// ============================================================
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String   // Email admin
+  action    String   // Ex: "APPOINTMENT_CONFIRMED", "SERVICE_CREATED"
+  target    String?  // Ex: ID du rendez-vous
+  metadata  Json?    // Données supplémentaires
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  userId    String? @map("user_id")
+  user      User?   @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
